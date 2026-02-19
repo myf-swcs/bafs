@@ -395,7 +395,8 @@
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
     import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-    import { getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect, remove, update, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.app";
+    // 修正路徑：移除末尾錯誤的 .app
+    import { getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect, remove, update, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
 
     lucide.createIcons();
 
@@ -434,15 +435,18 @@
         try {
             await signInAnonymously(auth);
         } catch (error) {
-            console.error("Auth Error:", error);
-            alert("登入失敗，請檢查 Firebase 是否啟用『匿名 (Anonymous)』登入方法。");
+            console.error("Auth Error:", error.code, error.message);
+            if (error.code === 'auth/operation-not-allowed') {
+                alert("登入失敗：Firebase 尚未啟用『匿名 (Anonymous)』登入方法。請前往 Firebase 控制台開啟。");
+            } else {
+                alert("登入出錯：" + error.message);
+            }
         }
     });
 
     onAuthStateChanged(auth, (user) => {
         if (user) {
             currentUser = user;
-            // 嘗試從本地取得暱稱
             currentNickname = currentNickname || localStorage.getItem('study_room_nickname') || "匿名學生";
             document.getElementById('auth-screen').style.display = 'none';
             document.getElementById('main-app').style.display = 'flex';
@@ -484,7 +488,9 @@
         if (!name) return;
         const newRef = push(ref(db, 'rooms'));
         await set(newRef, { name, createdBy: currentNickname, createdAt: serverTimestamp() });
-        bootstrap.Modal.getInstance(document.getElementById('createRoomModal')).hide();
+        const modalEl = document.getElementById('createRoomModal');
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
         joinRoom(newRef.key, name);
     });
 
@@ -497,12 +503,10 @@
         document.getElementById('no-room-selected').classList.add('d-none');
         document.getElementById('current-room-name').innerText = roomName;
         
-        // 更新在線狀態
         const statusRef = ref(db, `rooms/${roomId}/onlineUsers/${currentUser.uid}`);
         set(statusRef, { name: currentNickname, lastSeen: serverTimestamp() });
         onDisconnect(statusRef).remove();
 
-        // 讀取累計時間
         onValue(ref(db, `rooms/${roomId}/studyTimes/${currentUser.uid}`), (snap) => {
             currentTotalMinutes = snap.val()?.total || 0;
             document.getElementById('total-study-time').innerText = currentTotalMinutes;
@@ -519,7 +523,6 @@
     }
 
     function startRoomListeners(roomId) {
-        // 監聽訊息
         onValue(query(ref(db, `rooms/${roomId}/chat`), limitToLast(50)), (snapshot) => {
             const msgBox = document.getElementById('chat-messages');
             msgBox.innerHTML = '';
@@ -534,7 +537,6 @@
             msgBox.scrollTop = msgBox.scrollHeight;
         });
 
-        // 監聽在線人數
         onValue(ref(db, `rooms/${roomId}/onlineUsers`), (snapshot) => {
             const list = document.getElementById('online-users');
             list.innerHTML = '';
@@ -550,7 +552,6 @@
             document.getElementById('online-count').innerText = count;
         });
 
-        // 排行榜
         onValue(ref(db, `rooms/${roomId}/studyTimes`), (snapshot) => {
             const list = document.getElementById('leaderboard');
             list.innerHTML = '';
@@ -565,7 +566,6 @@
         });
     }
 
-    // 聊天發送
     document.getElementById('chat-form').onsubmit = (e) => {
         e.preventDefault();
         const input = document.getElementById('chat-input');
@@ -579,7 +579,6 @@
         input.value = '';
     };
 
-    // 計時器
     document.getElementById('btn-timer-start').onclick = () => {
         if (studyInterval) return;
         document.getElementById('btn-timer-start').classList.add('d-none');
