@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>學生在線虛擬溫習室 - 雲端共學平台</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4a90e2;
+            --bg-color: #f4f7f6;
+        }
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: var(--bg-color);
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+        }
+        #auth-screen {
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #main-app {
+            display: none;
+            height: 100vh;
+            flex-direction: column;
+        }
+        .navbar {
+            background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            z-index: 100;
+        }
+        .main-container {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+        /* Sidebar Styles */
+        .sidebar {
+            width: 300px;
+            background: white;
+            border-right: 1px solid #dee2e6;
+            display: flex;
+            flex-direction: column;
+        }
+        .room-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .room-item {
+            cursor: pointer;
+            transition: background 0.2s;
+            border-bottom: 1px solid #f8f9fa;
+        }
+        .room-item:hover {
+            background-color: #f0f7ff;
+        }
+        .room-item.active {
+            background-color: #e7f1ff;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        /* Content Area Styles */
+        .content-area {
+            flex: 1;
+            display: flex;
+            background: #fff;
+        }
+        .chat-section {
+            flex: 2;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #dee2e6;
+        }
+        .info-section {
+            flex: 1;
+            background: #fafafa;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        /* Chat Styles */
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            background: #fdfdfd;
+        }
+        .msg {
+            margin-bottom: 10px;
+            max-width: 85%;
+        }
+        .msg-bubble {
+            padding: 8px 12px;
+            border-radius: 15px;
+            display: inline-block;
+            background: #e9ecef;
+        }
+        .msg-me {
+            margin-left: auto;
+            text-align: right;
+        }
+        .msg-me .msg-bubble {
+            background: var(--primary-color);
+            color: white;
+        }
+        .msg-info {
+            font-size: 0.75rem;
+            color: #888;
+            margin-bottom: 2px;
+        }
+
+        /* Timer Card */
+        .timer-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .timer-display {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin: 10px 0;
+        }
+
+        /* Utility */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #aaa;
+        }
+
+        @media (max-width: 768px) {
+            .sidebar { width: 100px; }
+            .sidebar span { display: none; }
+            .info-section { display: none; }
+        }
+
+        /* Google Button Style */
+        .btn-google {
+            background-color: white;
+            color: #757575;
+            border: 1px solid #dadce0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            font-weight: 500;
+        }
+        .btn-google:hover {
+            background-color: #f8f9fa;
+            border-color: #d2d2d2;
+        }
+    </style>
+</head>
+<body>
+
+<!-- 1. 登入介面 -->
+<div id="auth-screen">
+    <div class="card shadow-sm" style="width: 350px;">
+        <div class="card-body text-center p-4">
+            <h3 class="mb-4 fw-bold">虛擬溫習室</h3>
+            <p class="text-muted mb-4">使用 Google 帳戶登入以記錄你的溫習時數</p>
+            <button id="btn-login-google" class="btn btn-google w-100 py-2">
+                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="18">
+                使用 Google 登入
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- 2. 主介面 -->
+<div id="main-app">
+    <!-- 頂部導覽列 -->
+    <nav class="navbar px-3">
+        <span class="navbar-brand fw-bold text-primary">📚 StudyRoom Online</span>
+        <div class="d-flex align-items-center">
+            <span id="user-display-name" class="me-3 text-muted small"></span>
+            <button id="btn-logout" class="btn btn-outline-danger btn-sm">退出</button>
+        </div>
+    </nav>
+
+    <div class="main-container">
+        <!-- 左側：房間列表 -->
+        <div class="sidebar">
+            <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+                <h6 class="mb-0 fw-bold">溫習房間</h6>
+                <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createRoomModal">+</button>
+            </div>
+            <div id="room-list" class="room-list">
+                <!-- 房間清單載入處 -->
+            </div>
+        </div>
+
+        <!-- 右側：主要內容 -->
+        <div class="content-area" id="room-content">
+            <!-- 未選取房間時顯示 -->
+            <div id="no-room-selected" class="empty-state w-100">
+                <img src="https://cdn-icons-png.flaticon.com/512/2436/2436702.png" width="100" class="mb-3" style="opacity: 0.2;">
+                <h5>請選擇一個房間開始溫習</h5>
+            </div>
+
+            <!-- 選取房間後顯示 -->
+            <div id="active-room-ui" class="w-100 h-100 d-none" style="display: flex;">
+                <div class="chat-section">
+                    <div class="p-3 border-bottom bg-light">
+                        <h6 id="current-room-name" class="mb-0 fw-bold text-truncate">房間名稱</h6>
+                    </div>
+                    <div id="chat-messages"></div>
+                    <div class="p-3 border-top">
+                        <form id="chat-form" class="d-flex gap-2">
+                            <input type="text" id="chat-input" class="form-control" placeholder="輸入訊息..." autocomplete="off">
+                            <button type="submit" class="btn btn-primary px-4">發送</button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="info-section">
+                    <!-- 計時器 -->
+                    <div class="timer-card">
+                        <h6 class="text-muted mb-0">我的溫習計時</h6>
+                        <div class="timer-display" id="timer-text">00:00:00</div>
+                        <div class="d-flex justify-content-center gap-2">
+                            <button id="btn-timer-start" class="btn btn-success btn-sm">開始</button>
+                            <button id="btn-timer-pause" class="btn btn-warning btn-sm d-none">暫停</button>
+                            <button id="btn-timer-reset" class="btn btn-outline-secondary btn-sm">重置</button>
+                        </div>
+                        <div class="mt-2 small text-muted">累計：<span id="total-study-time">0</span> 分鐘</div>
+                    </div>
+
+                    <!-- 在線名單 -->
+                    <div class="mb-4">
+                        <h6 class="fw-bold mb-3">當前在線 (<span id="online-count">0</span>)</h6>
+                        <div id="online-users" class="list-group list-group-flush small shadow-sm rounded">
+                            <!-- 在線使用者清單 -->
+                        </div>
+                    </div>
+
+                    <!-- 排行榜 -->
+                    <div>
+                        <h6 class="fw-bold mb-3">本室溫習排行 (Top 3)</h6>
+                        <div id="leaderboard" class="list-group list-group-flush small shadow-sm rounded">
+                            <!-- 排行榜清單 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 建立房間 Modal -->
+<div class="modal fade" id="createRoomModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">建立新溫習室</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="text" id="new-room-name" class="form-control" placeholder="房間名稱 (例如: 數學專注區)">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" id="btn-create-room" class="btn btn-primary">確認建立</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Firebase SDK -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect, remove, update, query, limitToLast, get } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    // --- Firebase 配置已更新 ---
+    const firebaseConfig = {
+        apiKey: "AIzaSyDBrU-Oy70pCPXTDsis1gC-TAge0RqXrmY",
+        authDomain: "timer-9545c.firebaseapp.com",
+        databaseURL: "https://timer-9545c-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "timer-9545c",
+        storageBucket: "timer-9545c.firebasestorage.app",
+        messagingSenderId: "272069871280",
+        appId: "1:272069871280:web:c8e8e1d4d06a8542f51d75"
+    };
+
+    // 初始化 Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+    const provider = new GoogleAuthProvider();
+
+    // 全域變數
+    let currentUser = null;
+    let currentNickname = "學生";
+    let activeRoomId = null;
+    let studyInterval = null;
+    let sessionSeconds = 0;
+    let currentTotalMinutes = 0;
+
+    // DOM 元素
+    const authScreen = document.getElementById('auth-screen');
+    const mainApp = document.getElementById('main-app');
+    const roomListContainer = document.getElementById('room-list');
+    const chatMessages = document.getElementById('chat-messages');
+    const onlineUsersList = document.getElementById('online-users');
+    const leaderboardList = document.getElementById('leaderboard');
+
+    // --- 1. 身份驗證功能 ---
+
+    // Google 登入
+    document.getElementById('btn-login-google').addEventListener('click', async () => {
+        try {
+            await signInWithPopup(auth, provider);
+        } catch (error) {
+            console.error("Login Error:", error);
+            alert("Google 登入失敗，請確認 Firebase 已啟用 Google 登入方法。");
+        }
+    });
+
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            currentUser = user;
+            currentNickname = user.displayName || "學生";
+            authScreen.style.display = 'none';
+            mainApp.style.display = 'flex';
+            document.getElementById('user-display-name').innerText = `你好, ${currentNickname}`;
+            initRoomList();
+        } else {
+            authScreen.style.display = 'flex';
+            mainApp.style.display = 'none';
+            cleanupRoomSession();
+        }
+    });
+
+    document.getElementById('btn-logout').addEventListener('click', () => signOut(auth));
+
+    // --- 2. 房間系統功能 ---
+
+    function initRoomList() {
+        const roomsRef = ref(db, 'rooms');
+        onValue(roomsRef, (snapshot) => {
+            roomListContainer.innerHTML = '';
+            const rooms = snapshot.val();
+            if (!rooms) return;
+
+            Object.keys(rooms).forEach(roomId => {
+                const room = rooms[roomId];
+                const div = document.createElement('div');
+                div.className = `room-item p-3 ${activeRoomId === roomId ? 'active' : ''}`;
+                div.innerHTML = `
+                    <div class="fw-bold">${room.name}</div>
+                    <div class="small text-muted">建立者: ${room.createdBy}</div>
+                `;
+                div.onclick = () => joinRoom(roomId, room.name);
+                roomListContainer.appendChild(div);
+            });
+        });
+    }
+
+    document.getElementById('btn-create-room').addEventListener('click', async () => {
+        const roomName = document.getElementById('new-room-name').value.trim();
+        if (!roomName) return alert("請輸入房間名稱");
+
+        const roomsRef = ref(db, 'rooms');
+        const newRoomRef = push(roomsRef);
+        await set(newRoomRef, {
+            name: roomName,
+            createdBy: currentNickname,
+            createdAt: serverTimestamp()
+        });
+
+        const modalElement = document.getElementById('createRoomModal');
+        const modal = bootstrap.Modal.getInstance(modalElement);
+        modal.hide();
+        document.getElementById('new-room-name').value = '';
+        joinRoom(newRoomRef.key, roomName);
+    });
+
+    async function joinRoom(roomId, roomName) {
+        if (activeRoomId === roomId) return;
+        cleanupRoomSession();
+
+        activeRoomId = roomId;
+        document.getElementById('active-room-ui').classList.remove('d-none');
+        document.getElementById('no-room-selected').classList.add('d-none');
+        document.getElementById('current-room-name').innerText = roomName;
+        
+        document.querySelectorAll('.room-item').forEach(el => el.classList.remove('active'));
+        
+        const myStatusRef = ref(db, `rooms/${roomId}/onlineUsers/${currentUser.uid}`);
+        set(myStatusRef, { name: currentNickname, lastSeen: serverTimestamp() });
+        onDisconnect(myStatusRef).remove();
+
+        const myTimeRef = ref(db, `rooms/${roomId}/studyTimes/${currentUser.uid}`);
+        onValue(myTimeRef, (snap) => {
+            const data = snap.val();
+            currentTotalMinutes = data ? data.total : 0;
+            document.getElementById('total-study-time').innerText = currentTotalMinutes;
+        }, { onlyOnce: true });
+
+        startRoomListeners(roomId);
+    }
+
+    function cleanupRoomSession() {
+        if (activeRoomId && currentUser) {
+            remove(ref(db, `rooms/${activeRoomId}/onlineUsers/${currentUser.uid}`));
+        }
+        stopTimer();
+        chatMessages.innerHTML = '';
+        activeRoomId = null;
+    }
+
+    // --- 3. 房間內功能實作 ---
+
+    function startRoomListeners(roomId) {
+        const chatRef = query(ref(db, `rooms/${roomId}/chat`), limitToLast(50));
+        onValue(chatRef, (snapshot) => {
+            chatMessages.innerHTML = '';
+            snapshot.forEach((child) => {
+                const msg = child.val();
+                appendChatMessage(msg);
+            });
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        });
+
+        const onlineRef = ref(db, `rooms/${roomId}/onlineUsers`);
+        onValue(onlineRef, (snapshot) => {
+            onlineUsersList.innerHTML = '';
+            const users = snapshot.val();
+            let count = 0;
+            if (users) {
+                Object.values(users).forEach(u => {
+                    count++;
+                    const item = document.createElement('div');
+                    item.className = 'list-group-item d-flex align-items-center bg-transparent border-0 py-1';
+                    item.innerHTML = `<span class="text-success me-2">●</span> ${u.name}`;
+                    onlineUsersList.appendChild(item);
+                });
+            }
+            document.getElementById('online-count').innerText = count;
+        });
+
+        const timesRef = ref(db, `rooms/${roomId}/studyTimes`);
+        onValue(timesRef, (snapshot) => {
+            const times = [];
+            snapshot.forEach(child => {
+                const data = child.val();
+                times.push({ uid: child.key, total: data.total });
+            });
+            times.sort((a, b) => b.total - a.total);
+            const top3 = times.slice(0, 3);
+
+            leaderboardList.innerHTML = '';
+            top3.forEach((t, index) => {
+                const item = document.createElement('div');
+                item.className = 'list-group-item d-flex justify-content-between align-items-center bg-transparent border-0';
+                item.innerHTML = `<span>#${index+1} 學生(${t.uid.substring(0,4)})</span> <span class="badge bg-primary rounded-pill">${t.total} 分鐘</span>`;
+                leaderboardList.appendChild(item);
+            });
+            if (top3.length === 0) {
+                leaderboardList.innerHTML = '<div class="text-muted text-center p-2 small">尚無數據</div>';
+            }
+        });
+    }
+
+    document.getElementById('chat-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const text = document.getElementById('chat-input').value.trim();
+        if (!text || !activeRoomId) return;
+
+        const chatRef = ref(db, `rooms/${activeRoomId}/chat`);
+        push(chatRef, {
+            user: currentNickname,
+            uid: currentUser.uid,
+            text: text,
+            timestamp: serverTimestamp()
+        });
+        document.getElementById('chat-input').value = '';
+    });
+
+    function appendChatMessage(msg) {
+        const isMe = msg.uid === currentUser.uid;
+        const div = document.createElement('div');
+        div.className = `msg ${isMe ? 'msg-me' : ''}`;
+        div.innerHTML = `
+            <div class="msg-info">${msg.user}</div>
+            <div class="msg-bubble">${msg.text}</div>
+        `;
+        chatMessages.appendChild(div);
+    }
+
+    // --- 4. 計時器邏輯 ---
+
+    const timerText = document.getElementById('timer-text');
+    const btnStart = document.getElementById('btn-timer-start');
+    const btnPause = document.getElementById('btn-timer-pause');
+    const btnReset = document.getElementById('btn-timer-reset');
+
+    btnStart.onclick = () => {
+        if (studyInterval) return;
+        btnStart.classList.add('d-none');
+        btnPause.classList.remove('d-none');
+        studyInterval = setInterval(() => {
+            sessionSeconds++;
+            updateTimerDisplay();
+            
+            if (sessionSeconds % 60 === 0) {
+                currentTotalMinutes++;
+                updateFirebaseStudyTime();
+            }
+        }, 1000);
+    };
+
+    btnPause.onclick = stopTimer;
+
+    btnReset.onclick = () => {
+        stopTimer();
+        sessionSeconds = 0;
+        updateTimerDisplay();
+    };
+
+    function stopTimer() {
+        clearInterval(studyInterval);
+        studyInterval = null;
+        btnStart.classList.remove('d-none');
+        btnPause.classList.add('d-none');
+    }
+
+    function updateTimerDisplay() {
+        const hrs = Math.floor(sessionSeconds / 3600).toString().padStart(2, '0');
+        const mins = Math.floor((sessionSeconds % 3600) / 60).toString().padStart(2, '0');
+        const secs = (sessionSeconds % 60).toString().padStart(2, '0');
+        timerText.innerText = `${hrs}:${mins}:${secs}`;
+    }
+
+    async function updateFirebaseStudyTime() {
+        if (!activeRoomId || !currentUser) return;
+        const timeRef = ref(db, `rooms/${activeRoomId}/studyTimes/${currentUser.uid}`);
+        await update(timeRef, { total: currentTotalMinutes });
+        document.getElementById('total-study-time').innerText = currentTotalMinutes;
+    }
+
+</script>
+
+<!-- Bootstrap Bundle JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+</body>
+</html>
