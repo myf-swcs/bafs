@@ -1,612 +1,482 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>學生在線虛擬溫習室 - 雲端共學平台</title>
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Google Fonts: Noto Sans TC & Montserrat for numbers -->
-    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        :root {
-            --primary: #2563eb;
-            --primary-dark: #1e40af;
-            --accent: #f59e0b;
-            --bg-main: #f8fafc;
-            --sidebar-bg: #ffffff;
-            --card-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
-            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  onSnapshot, 
+  collection, 
+  query, 
+  addDoc, 
+  serverTimestamp,
+  updateDoc,
+  increment
+} from 'firebase/firestore';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  onAuthStateChanged 
+} from 'firebase/auth';
+import { 
+  Timer, 
+  MessageSquare, 
+  Users, 
+  Trophy, 
+  Send, 
+  Play, 
+  Square, 
+  Hash,
+  User,
+  BookOpen,
+  LayoutDashboard,
+  Award,
+  ChevronRight,
+  PieChart as PieChartIcon,
+  Book,
+  Plus,
+  Edit2,
+  Check,
+  Clock
+} from 'lucide-react';
 
-        body {
-            font-family: 'Noto Sans TC', sans-serif;
-            background-color: var(--bg-main);
-            color: #1e293b;
-            height: 100vh;
-            margin: 0;
-            overflow: hidden;
-        }
+// --- Firebase 配置 ---
+const firebaseConfig = {
+  apiKey: "AIzaSyDBrU-Oy70pCPXTDsis1gC-TAge0RqXrmY",
+  authDomain: "timer-9545c.firebaseapp.com",
+  databaseURL: "https://timer-9545c-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "timer-9545c",
+  storageBucket: "timer-9545c.firebasestorage.app",
+  messagingSenderId: "272069871280",
+  appId: "1:272069871280:web:c8e8e1d4d06a8542f51d75"
+};
 
-        /* 登入畫面 */
-        #auth-screen {
-            height: 100vh;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const APP_ID = 'timer-9545c-study-room';
 
-        .auth-card {
-            background: white;
-            border-radius: 24px;
-            padding: 40px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
-            width: 100%;
-            max-width: 400px;
-            text-align: center;
-        }
+const INITIAL_SUBJECTS = ["中文", "英文", "數學", "BAFS"];
 
-        /* 主應用佈局 */
-        #main-app {
-            display: none;
-            height: 100vh;
-            flex-direction: column;
-        }
+export default function App() {
+  const [view, setView] = useState('study'); 
+  const [user, setUser] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [room, setRoom] = useState('公用大廳');
+  const [currentSubject, setCurrentSubject] = useState("中文");
+  const [inputRoom, setInputRoom] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [inputMsg, setInputMsg] = useState('');
+  const [roomUsers, setRoomUsers] = useState([]);
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [isActive, setIsActive] = useState(false);
+  
+  const [newSubject, setNewSubject] = useState('');
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [newName, setNewName] = useState('');
 
-        .navbar {
-            background: white;
-            border-bottom: 1px solid #e2e8f0;
-            padding: 0.75rem 1.5rem;
-            z-index: 100;
-        }
+  const chatEndRef = useRef(null);
 
-        .navbar-brand {
-            font-weight: 700;
-            font-size: 1.25rem;
-            letter-spacing: -0.025em;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .main-container {
-            flex: 1;
-            display: flex;
-            overflow: hidden;
-        }
-
-        /* 側邊欄 */
-        .sidebar {
-            width: 320px;
-            background: var(--sidebar-bg);
-            border-right: 1px solid #e2e8f0;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .room-item {
-            padding: 16px 20px;
-            border-radius: 12px;
-            margin: 4px 12px;
-            border: 1px solid transparent;
-            cursor: pointer;
-            transition: var(--transition);
-        }
-
-        .room-item:hover {
-            background-color: #f1f5f9;
-        }
-
-        .room-item.active {
-            background-color: #eff6ff;
-            border-color: #bfdbfe;
-            color: var(--primary);
-        }
-
-        /* 內容區域 */
-        .content-area {
-            flex: 1;
-            display: flex;
-            background: #fff;
-        }
-
-        .chat-section {
-            flex: 1.5;
-            display: flex;
-            flex-direction: column;
-            border-right: 1px solid #e2e8f0;
-        }
-
-        .info-section {
-            width: 360px;
-            background: #fcfcfd;
-            overflow-y: auto;
-            padding: 24px;
-        }
-
-        /* 聊天氣泡 */
-        #chat-messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .msg {
-            max-width: 80%;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .msg-me {
-            align-self: flex-end;
-            align-items: flex-end;
-        }
-
-        .msg-bubble {
-            padding: 10px 16px;
-            border-radius: 18px;
-            font-size: 0.95rem;
-            line-height: 1.5;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-        }
-
-        .msg-other .msg-bubble {
-            background: #f1f5f9;
-            color: #334155;
-            border-bottom-left-radius: 4px;
-        }
-
-        .msg-me .msg-bubble {
-            background: var(--primary);
-            color: white;
-            border-bottom-right-radius: 4px;
-        }
-
-        .msg-info {
-            font-size: 0.7rem;
-            font-weight: 600;
-            color: #94a3b8;
-            margin-bottom: 4px;
-            margin-left: 4px;
-        }
-
-        /* 計時器卡片 */
-        .timer-card {
-            background: white;
-            border-radius: 20px;
-            padding: 24px;
-            border: 1px solid #e2e8f0;
-            box-shadow: var(--card-shadow);
-            margin-bottom: 24px;
-            text-align: center;
-        }
-
-        .timer-display {
-            font-family: 'Montserrat', sans-serif;
-            font-size: 3rem;
-            font-weight: 600;
-            color: #1e293b;
-            margin: 15px 0;
-            font-variant-numeric: tabular-nums;
-        }
-
-        .timer-btn {
-            border-radius: 12px;
-            padding: 10px 20px;
-            font-weight: 600;
-            transition: var(--transition);
-        }
-
-        .timer-btn:active {
-            transform: scale(0.95);
-        }
-
-        /* 列表樣式 */
-        .glass-list-item {
-            background: white;
-            border: 1px solid #f1f5f9;
-            border-radius: 12px;
-            margin-bottom: 8px;
-            padding: 12px 16px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            transition: var(--transition);
-        }
-
-        /* 捲軸樣式 */
-        ::-webkit-scrollbar {
-            width: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1;
-            border-radius: 10px;
-        }
-
-        @media (max-width: 992px) {
-            .sidebar { width: 80px; }
-            .sidebar .room-info, .sidebar h6, .sidebar .btn-sm span { display: none; }
-            .info-section { display: none; }
-        }
-    </style>
-</head>
-<body>
-
-<!-- 1. 登入介面 (不記名/匿名版) -->
-<div id="auth-screen">
-    <div class="auth-card">
-        <div class="mb-4">
-            <div class="bg-primary bg-opacity-10 d-inline-flex p-3 rounded-circle mb-3">
-                <i data-lucide="user-plus" class="text-primary" style="width: 40px; height: 40px;"></i>
-            </div>
-            <h2 class="fw-bold text-dark">立即開始溫習</h2>
-            <p class="text-muted">輸入暱稱，無需註冊即可加入</p>
-        </div>
+  // 1. 認證與用戶數據初始化 (修正: 增加錯誤處理與掛載檢查)
+  useEffect(() => {
+    let isMounted = true;
+    signInAnonymously(auth).catch(err => console.error("Auth Error:", err));
+    
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
+      if (u && isMounted) {
+        setUser(u);
+        const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'onlineUsers', u.uid);
         
-        <div class="mb-3 text-start">
-            <label class="form-label small fw-bold text-muted">你的暱稱</label>
-            <input type="text" id="login-nickname" class="form-control form-control-lg bg-light border-0 px-4" placeholder="例如：勤奮的小明" style="border-radius: 12px;">
+        const unsubDoc = onSnapshot(userRef, (docSnap) => {
+          if (docSnap.exists()) {
+            setUserData(docSnap.data());
+          } else {
+            setDoc(userRef, {
+              uid: u.uid,
+              displayName: `學員 ${u.uid.slice(0, 4)}`,
+              lastSeen: serverTimestamp(),
+              room: room,
+              totalStudyTime: 0,
+              subjects: {}, 
+              customSubjectList: INITIAL_SUBJECTS,
+              joinedAt: serverTimestamp()
+            });
+          }
+        });
+        return () => unsubDoc();
+      }
+    });
+    return () => { isMounted = false; unsubscribe(); };
+  }, []);
+
+  // 2. 房間位置更新 (修正: 增加 user 檢查保護)
+  useEffect(() => {
+    if (user) {
+      const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'onlineUsers', user.uid);
+      updateDoc(userRef, { room: room }).catch(e => console.log("Update room error:", e));
+    }
+  }, [room, user]);
+
+  // 3. 聊天訊息訂閱
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'artifacts', APP_ID, 'public', 'data', `chats_${room}`));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .sort((a, b) => (a.timestamp?.seconds || 0) - (b.timestamp?.seconds || 0));
+      setMessages(msgs.slice(-30));
+      setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+    }, (error) => console.log("Chat sync error:", error));
+    return () => unsubscribe();
+  }, [user, room]);
+
+  // 4. 排行榜訂閱
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, 'artifacts', APP_ID, 'public', 'data', 'onlineUsers'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setRoomUsers(users.filter(u => u.room === room));
+    });
+    return () => unsubscribe();
+  }, [user, room]);
+
+  // 5. 計時器邏輯
+  useEffect(() => {
+    let interval = null;
+    if (isActive) {
+      interval = setInterval(() => setTimerSeconds(prev => prev + 1), 1000);
+    } else {
+      setTimerSeconds(0);
+    }
+    return () => clearInterval(interval);
+  }, [isActive]);
+
+  // 每 10 秒將數據同步到 Firestore (修正: 增加 isActive 檢查)
+  useEffect(() => {
+    if (isActive && timerSeconds > 0 && timerSeconds % 10 === 0 && user) {
+      const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'onlineUsers', user.uid);
+      updateDoc(userRef, {
+        totalStudyTime: increment(10),
+        lastSeen: serverTimestamp(),
+        [`subjects.${currentSubject}`]: increment(10)
+      }).catch(e => console.log("Study sync error:", e));
+    }
+  }, [timerSeconds, isActive, user, currentSubject]);
+
+  const handleAddSubject = () => {
+    if (!newSubject.trim() || !user || !userData) return;
+    if (userData.customSubjectList?.includes(newSubject.trim())) return;
+    
+    const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'onlineUsers', user.uid);
+    updateDoc(userRef, {
+      customSubjectList: [...(userData.customSubjectList || []), newSubject.trim()]
+    });
+    setNewSubject('');
+  };
+
+  const handleUpdateName = () => {
+    if (!newName.trim() || !user) return;
+    const userRef = doc(db, 'artifacts', APP_ID, 'public', 'data', 'onlineUsers', user.uid);
+    updateDoc(userRef, { displayName: newName.trim() });
+    setIsEditingName(false);
+  };
+
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!inputMsg.trim() || !user) return;
+    await addDoc(collection(db, 'artifacts', APP_ID, 'public', 'data', `chats_${room}`), {
+      text: inputMsg,
+      uid: user.uid,
+      timestamp: serverTimestamp(),
+      sender: userData?.displayName || `用戶_${user.uid.slice(0, 4)}`
+    });
+    setInputMsg('');
+  };
+
+  const formatToHours = (s) => {
+    return (s / 3600).toFixed(1);
+  };
+
+  const formatTime = (s) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return h > 0 ? `${h}h ${m}m ${sec}s` : `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  const subjectList = userData?.customSubjectList || INITIAL_SUBJECTS;
+
+  const pieChartData = useMemo(() => {
+    if (!userData?.subjects || !userData?.totalStudyTime) return [];
+    const colors = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
+    let cumulativePercent = 0;
+    
+    const validSubjects = Object.entries(userData.subjects).filter(([_, sec]) => sec > 0);
+    
+    // 如果只有一個科目，特別處理為完整的圓
+    if (validSubjects.length === 1) {
+      const [name, sec] = validSubjects[0];
+      return [{
+        name,
+        seconds: sec,
+        percent: 100,
+        path: "M 1 0 A 1 1 0 1 1 1 -0.0001 L 0 0 Z",
+        color: colors[0]
+      }];
+    }
+
+    return validSubjects.map(([name, sec], i) => {
+        const percent = sec / userData.totalStudyTime;
+        const startX = Math.cos(2 * Math.PI * cumulativePercent);
+        const startY = Math.sin(2 * Math.PI * cumulativePercent);
+        cumulativePercent += percent;
+        const endX = Math.cos(2 * Math.PI * cumulativePercent);
+        const endY = Math.sin(2 * Math.PI * cumulativePercent);
+        const largeArcFlag = percent > 0.5 ? 1 : 0;
+
+        return {
+          name,
+          seconds: sec,
+          percent: Math.round(percent * 100),
+          path: `M 0 0 L ${startX} ${startY} A 1 1 0 ${largeArcFlag} 1 ${endX} ${endY} Z`,
+          color: colors[i % colors.length]
+        };
+      });
+  }, [userData]);
+
+  const levelInfo = useMemo(() => {
+    const totalMinutes = Math.floor((userData?.totalStudyTime || 0) / 60);
+    if (totalMinutes < 60) return { level: '初學者', icon: '🌱', next: 60 - totalMinutes };
+    if (totalMinutes < 300) return { level: '進階學者', icon: '📘', next: 300 - totalMinutes };
+    return { level: '溫習戰神', icon: '👑', next: 0 };
+  }, [userData]);
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans">
+      <nav className="bg-white border-b border-slate-200 sticky top-0 z-50 px-4">
+        <div className="max-w-6xl mx-auto flex items-center justify-between h-16">
+          <div className="flex items-center gap-2 font-black text-xl text-indigo-600 cursor-pointer" onClick={() => setView('study')}>
+            <BookOpen size={28} />
+            <span>V-Study</span>
+          </div>
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            <button onClick={() => setView('study')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${view === 'study' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'}`}><LayoutDashboard size={18} />溫習室</button>
+            <button onClick={() => setView('profile')} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${view === 'profile' ? 'bg-white shadow-sm text-indigo-600' : 'text-slate-500'}`}><User size={18} />個人檔案</button>
+          </div>
         </div>
+      </nav>
 
-        <button id="btn-login-anonymous" class="btn btn-primary btn-lg w-100 py-3 shadow-sm d-flex align-items-center justify-content-center gap-2 rounded-pill fw-bold">
-            <i data-lucide="play-circle"></i>
-            <span>進入溫習室</span>
-        </button>
-        
-        <p class="mt-4 small text-muted">提示：匿名登入的記錄將保存在此瀏覽器中。</p>
-    </div>
-</div>
-
-<!-- 2. 主介面 -->
-<div id="main-app">
-    <nav class="navbar">
-        <div class="container-fluid">
-            <a class="navbar-brand text-primary" href="#">
-                <i data-lucide="graduation-cap"></i>
-                <span>StudyRoom Online</span>
-            </a>
-            <div class="d-flex align-items-center gap-3">
-                <div class="d-none d-md-block text-end">
-                    <div id="user-display-name" class="fw-bold small"></div>
-                    <div class="text-muted small" style="font-size: 0.7rem;">匿名使用者</div>
+      <main className="max-w-6xl mx-auto p-4 md:p-8">
+        {view === 'study' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+            <div className="lg:col-span-3 space-y-6">
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                <div className="flex items-center gap-2 mb-4 text-indigo-600 font-bold"><Hash size={18} /><span>房間</span></div>
+                <h2 className="text-xl font-bold mb-4 truncate">{room}</h2>
+                <div className="flex gap-2">
+                  <input type="text" placeholder="房號..." className="w-full px-3 py-2 bg-slate-50 rounded-lg text-sm border border-slate-200 outline-none focus:ring-2 ring-indigo-500" value={inputRoom} onChange={(e) => setInputRoom(e.target.value)} />
+                  <button onClick={() => { if(inputRoom) setRoom(inputRoom); setInputRoom(''); }} className="bg-indigo-600 text-white p-2 rounded-lg hover:bg-indigo-700 transition-colors"><ChevronRight size={18} /></button>
                 </div>
-                <button id="btn-logout" class="btn btn-light btn-sm rounded-circle p-2" title="登出">
-                    <i data-lucide="log-out" class="text-danger" style="width: 18px;"></i>
+              </div>
+
+              <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200">
+                <div className="flex items-center gap-2 mb-4 text-amber-500 font-bold"><Trophy size={18} /><span>房間排行榜</span></div>
+                <div className="space-y-3">
+                  {roomUsers.sort((a,b) => (b.totalStudyTime||0)-(a.totalStudyTime||0)).slice(0,5).map((u, idx) => (
+                    <div key={u.uid} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl text-xs font-semibold">
+                      <div className="flex items-center gap-2">
+                        <span className={`w-5 h-5 flex items-center justify-center rounded-full text-[10px] text-white ${idx === 0 ? 'bg-yellow-400' : 'bg-slate-300'}`}>{idx + 1}</span>
+                        <span className="truncate max-w-[80px]">{u.displayName || '匿名'}</span>
+                      </div>
+                      <span className="text-indigo-600">{(u.totalStudyTime||0) >= 3600 ? `${formatToHours(u.totalStudyTime)}h` : `${Math.floor((u.totalStudyTime || 0) / 60)}m`}</span>
+                    </div>
+                  ))}
+                  {roomUsers.length === 0 && <div className="text-[10px] text-slate-400 text-center py-2">目前沒有人在這</div>}
+                </div>
+              </div>
+            </div>
+
+            <div className="lg:col-span-6 space-y-6">
+              <div className="bg-white rounded-[2.5rem] p-8 shadow-sm border border-slate-200 flex flex-col items-center">
+                <div className="mb-6 w-full space-y-4">
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {subjectList.map(sub => (
+                      <button 
+                        key={sub} 
+                        disabled={isActive}
+                        onClick={() => setCurrentSubject(sub)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all ${currentSubject === sub ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-300'}`}
+                      >
+                        {sub}
+                      </button>
+                    ))}
+                    <div className="flex items-center gap-1 bg-slate-50 rounded-full px-2 py-1 border border-dashed border-slate-300">
+                      <input 
+                        type="text" 
+                        placeholder="新課目..." 
+                        className="bg-transparent border-none text-[10px] outline-none w-14"
+                        value={newSubject}
+                        onChange={(e) => setNewSubject(e.target.value)}
+                        onKeyPress={(e) => e.key === 'Enter' && handleAddSubject()}
+                      />
+                      <button onClick={handleAddSubject} className="text-indigo-600 hover:scale-110 transition-transform"><Plus size={14} /></button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-indigo-50 p-6 rounded-full mb-6 relative">
+                  <Timer size={40} className={`text-indigo-600 ${isActive ? 'animate-pulse' : ''}`} />
+                  {isActive && <div className="absolute inset-0 rounded-full border-2 border-indigo-200 animate-ping"></div>}
+                </div>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">正在專注於：{currentSubject}</p>
+                <div className="text-7xl font-mono font-black text-slate-800 mb-8 tracking-tighter transition-all">
+                  {isActive ? formatTime(timerSeconds) : "00:00"}
+                </div>
+                
+                <button 
+                  onClick={() => setIsActive(!isActive)}
+                  className={`w-full max-w-xs flex items-center justify-center gap-2 py-4 rounded-2xl font-bold shadow-lg transition-all active:scale-95 ${isActive ? 'bg-rose-500 text-white shadow-rose-100 hover:bg-rose-600' : 'bg-indigo-600 text-white shadow-indigo-100 hover:bg-indigo-700'}`}
+                >
+                  {isActive ? <Square size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+                  {isActive ? '停止並結算' : '開始專注'}
                 </button>
-            </div>
-        </div>
-    </nav>
-
-    <div class="main-container">
-        <!-- 左側：房間列表 -->
-        <div class="sidebar py-3">
-            <div class="px-4 mb-3 d-flex justify-content-between align-items-center">
-                <h6 class="mb-0 fw-bold text-uppercase text-muted small" style="letter-spacing: 0.05em;">專注空間</h6>
-                <button class="btn btn-primary btn-sm rounded-pill px-3 d-flex align-items-center gap-1" data-bs-toggle="modal" data-bs-target="#createRoomModal">
-                    <i data-lucide="plus" style="width: 16px;"></i>
-                    <span>建立</span>
-                </button>
-            </div>
-            <div id="room-list" class="room-list">
-                <!-- 房間列表 -->
-            </div>
-        </div>
-
-        <!-- 右側：主要內容 -->
-        <div class="content-area" id="room-content">
-            <div id="no-room-selected" class="empty-state w-100 bg-light">
-                <div class="text-center p-5 bg-white rounded-4 shadow-sm" style="max-width: 400px; margin: auto; margin-top: 100px;">
-                    <i data-lucide="layout" class="text-muted mb-3" style="width: 60px; height: 60px; opacity: 0.3;"></i>
-                    <h5 class="fw-bold">準備好開始了嗎？</h5>
-                    <p class="text-muted small">選擇一個房間或建立新空間，與大家一起專注。</p>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div className="bg-white p-5 rounded-2xl border border-slate-200">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">房間在線</p>
+                  <p className="text-xl font-bold">{roomUsers.length}</p>
                 </div>
+                <div className="bg-white p-5 rounded-2xl border border-slate-200">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">本科累計</p>
+                  <p className="text-xl font-bold text-indigo-600">{(userData?.subjects?.[currentSubject] || 0) >= 3600 ? `${formatToHours(userData?.subjects?.[currentSubject])}h` : `${Math.floor((userData?.subjects?.[currentSubject] || 0) / 60)}m`}</p>
+                </div>
+              </div>
             </div>
 
-            <div id="active-room-ui" class="w-100 h-100 d-none">
-                <div class="chat-section">
-                    <div class="px-4 py-3 border-bottom d-flex align-items-center justify-content-between">
-                        <div>
-                            <h6 id="current-room-name" class="mb-0 fw-bold">房間名稱</h6>
-                            <span class="text-muted small d-flex align-items-center gap-1">
-                                <i data-lucide="users" style="width: 12px;"></i>
-                                <span id="online-count">0</span> 人在線
-                            </span>
-                        </div>
-                    </div>
-                    <div id="chat-messages"></div>
-                    <div class="p-3 border-top bg-white">
-                        <form id="chat-form" class="d-flex gap-2">
-                            <input type="text" id="chat-input" class="form-control border-0 bg-light rounded-pill px-4 py-2" placeholder="輸入訊息..." autocomplete="off">
-                            <button type="submit" class="btn btn-primary rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
-                                <i data-lucide="send" style="width: 18px;"></i>
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <div class="info-section">
-                    <div class="timer-card">
-                        <h6 class="text-uppercase fw-bold text-muted small mb-1">專注計時器</h6>
-                        <div class="timer-display" id="timer-text">00:00:00</div>
-                        <div class="d-flex justify-content-center gap-2 mb-3">
-                            <button id="btn-timer-start" class="btn btn-primary timer-btn px-4 shadow-sm">
-                                <i data-lucide="play" class="me-1" style="width: 16px;"></i> 開始
-                            </button>
-                            <button id="btn-timer-pause" class="btn btn-warning timer-btn px-4 shadow-sm d-none">
-                                <i data-lucide="pause" class="me-1" style="width: 16px;"></i> 暫停
-                            </button>
-                            <button id="btn-timer-reset" class="btn btn-outline-secondary timer-btn">
-                                <i data-lucide="rotate-ccw" style="width: 16px;"></i>
-                            </button>
-                        </div>
-                        <div class="p-2 bg-light rounded-3 d-inline-block">
-                            <span class="small text-muted">累計：<strong id="total-study-time" class="text-dark">0</strong> 分鐘</span>
-                        </div>
-                    </div>
-
-                    <div class="mb-4">
-                        <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
-                            <i data-lucide="users" class="text-primary" style="width: 18px;"></i> 在線成員
-                        </h6>
-                        <div id="online-users"></div>
-                    </div>
-
-                    <div>
-                        <h6 class="fw-bold mb-3 d-flex align-items-center gap-2">
-                            <i data-lucide="trophy" class="text-accent" style="width: 18px;"></i> 專注排行
-                        </h6>
-                        <div id="leaderboard"></div>
-                    </div>
-                </div>
+            <div className="lg:col-span-3 flex flex-col h-[500px] lg:h-auto bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+              <div className="p-4 border-b border-slate-100 bg-slate-50/50 font-bold text-slate-700 text-sm">即時討論區</div>
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {messages.map((m) => (
+                  <div key={m.id} className={`flex flex-col ${m.uid === user?.uid ? 'items-end' : 'items-start'}`}>
+                    <span className="text-[9px] text-slate-400 mb-0.5">{m.sender}</span>
+                    <div className={`max-w-[90%] px-3 py-2 rounded-2xl text-xs break-words shadow-sm ${m.uid === user?.uid ? 'bg-indigo-600 text-white' : 'bg-slate-100'}`}>{m.text}</div>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+              <form onSubmit={handleSendMessage} className="p-4 border-t flex gap-2">
+                <input type="text" placeholder="輸入訊息..." className="flex-1 px-3 py-2 bg-slate-100 rounded-xl text-xs outline-none focus:ring-1 ring-indigo-300" value={inputMsg} onChange={(e) => setInputMsg(e.target.value)} />
+                <button type="submit" className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all"><Send size={16} /></button>
+              </form>
             </div>
-        </div>
+          </div>
+        ) : (
+          /* 個人檔案 */
+          <div className="max-w-2xl mx-auto space-y-8 animate-in fade-in duration-500">
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200 flex flex-col items-center relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-24 bg-gradient-to-r from-indigo-500 to-purple-500 opacity-10"></div>
+              <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center text-4xl mb-4 border-4 border-indigo-50 shadow-xl z-10">{levelInfo.icon}</div>
+              
+              <div className="flex items-center gap-2 mb-2 z-10">
+                {isEditingName ? (
+                  <div className="flex items-center gap-1 border-b-2 border-indigo-500 pb-1">
+                    <input 
+                      type="text" 
+                      className="text-xl font-black text-center outline-none bg-transparent"
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      autoFocus
+                    />
+                    <button onClick={handleUpdateName} className="text-emerald-500 hover:scale-110"><Check size={20} /></button>
+                  </div>
+                ) : (
+                  <>
+                    <h2 className="text-2xl font-black text-slate-800">{userData?.displayName}</h2>
+                    <button onClick={() => setIsEditingName(true)} className="text-slate-400 hover:text-indigo-500 transition-colors"><Edit2 size={16} /></button>
+                  </>
+                )}
+              </div>
+              
+              <p className="text-indigo-600 font-bold text-sm tracking-wide z-10">{levelInfo.level}</p>
+              
+              <div className="mt-8 w-full bg-slate-100 h-2 rounded-full overflow-hidden z-10">
+                <div className="bg-indigo-600 h-full transition-all duration-1000" style={{ width: `${Math.min(100, ((userData?.totalStudyTime || 0) / ((userData?.totalStudyTime || 0) + (levelInfo.next * 60))) * 100)}%` }}></div>
+              </div>
+              <p className="text-[10px] text-slate-400 mt-3 font-bold uppercase tracking-tighter z-10">
+                {levelInfo.next > 0 ? `距離升級還需專注 ${levelInfo.next} 分鐘` : '最高等級達成'}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-indigo-600 p-6 rounded-3xl text-white shadow-xl shadow-indigo-100">
+                <div className="bg-white/20 w-10 h-10 rounded-xl flex items-center justify-center mb-3"><Clock size={20}/></div>
+                <p className="text-indigo-100 text-[10px] font-bold uppercase tracking-widest mb-1">累積總時數</p>
+                <p className="text-3xl font-black">{formatToHours(userData?.totalStudyTime || 0)} <span className="text-sm font-normal">h</span></p>
+              </div>
+              <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                <p className="text-slate-400 text-[10px] font-bold uppercase mb-1 tracking-widest">總專注秒數</p>
+                <p className="text-xl font-black font-mono text-slate-800">{userData?.totalStudyTime || 0}</p>
+              </div>
+              <div className="bg-white p-6 rounded-3xl border border-slate-200">
+                <p className="text-slate-400 text-[10px] font-bold uppercase mb-1 tracking-widest">已解鎖學科</p>
+                <p className="text-xl font-bold text-indigo-500">{subjectList.length} <span className="text-sm font-normal text-slate-400">科</span></p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl p-8 shadow-sm border border-slate-200">
+              <div className="flex items-center gap-2 mb-8 font-bold text-slate-800 border-b pb-4">
+                <PieChartIcon size={20} className="text-indigo-500" />
+                <span>各科學時圓餅圖 (小時)</span>
+              </div>
+              
+              <div className="flex flex-col md:flex-row items-center justify-around gap-12">
+                {pieChartData.length > 0 ? (
+                  <div className="relative w-48 h-48 transform -rotate-90">
+                    <svg viewBox="-1 -1 2 2" className="w-full h-full overflow-visible">
+                      {pieChartData.map((slice, i) => (
+                        <path 
+                          key={i} 
+                          d={slice.path} 
+                          fill={slice.color} 
+                          className="hover:opacity-80 transition-opacity cursor-pointer"
+                        />
+                      ))}
+                    </svg>
+                  </div>
+                ) : (
+                  <div className="w-48 h-48 bg-slate-50 rounded-full border border-dashed border-slate-200 flex items-center justify-center text-slate-300 text-[10px] text-center p-6">
+                    開始溫習來<br/>生成統計圖表
+                  </div>
+                )}
+
+                <div className="flex-1 space-y-4 w-full">
+                  {pieChartData.map((slice, i) => (
+                    <div key={i} className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: slice.color }}></div>
+                          <span className="text-sm font-bold text-slate-700">{slice.name}</span>
+                        </div>
+                        <span className="text-xs font-black text-indigo-600">{formatToHours(slice.seconds)}h ({slice.percent}%)</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                         <div className="h-full rounded-full transition-all duration-700" style={{ backgroundColor: slice.color, width: `${slice.percent}%` }}></div>
+                      </div>
+                    </div>
+                  ))}
+                  {pieChartData.length === 0 && <p className="text-xs text-slate-400 italic text-center">尚未有專注紀錄</p>}
+                </div>
+              </div>
+            </div>
+
+            <button onClick={() => setView('study')} className="w-full py-4 text-indigo-600 font-bold hover:bg-indigo-50 rounded-2xl transition-colors flex items-center justify-center gap-2">
+              返回溫習室 <ChevronRight size={18} />
+            </button>
+          </div>
+        )}
+      </main>
     </div>
-</div>
-
-<!-- 建立房間 Modal -->
-<div class="modal fade" id="createRoomModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content border-0 shadow-lg" style="border-radius: 20px;">
-            <div class="modal-header border-0 pb-0">
-                <h5 class="modal-title fw-bold">建立空間</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body p-4">
-                <input type="text" id="new-room-name" class="form-control form-control-lg bg-light border-0 px-3" placeholder="空間名稱..." style="border-radius: 12px;">
-            </div>
-            <div class="modal-footer border-0 pt-0">
-                <button type="button" class="btn btn-light rounded-pill px-4" data-bs-dismiss="modal">取消</button>
-                <button type="button" id="btn-create-room" class="btn btn-primary rounded-pill px-4">建立</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Firebase SDK -->
-<script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-    import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
-    // 修正路徑：移除末尾錯誤的 .app
-    import { getDatabase, ref, set, push, onValue, serverTimestamp, onDisconnect, remove, update, query, limitToLast } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
-
-    lucide.createIcons();
-
-    const firebaseConfig = {
-        apiKey: "AIzaSyDBrU-Oy70pCPXTDsis1gC-TAge0RqXrmY",
-        authDomain: "timer-9545c.firebaseapp.com",
-        databaseURL: "https://timer-9545c-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "timer-9545c",
-        storageBucket: "timer-9545c.firebasestorage.app",
-        messagingSenderId: "272069871280",
-        appId: "1:272069871280:web:c8e8e1d4d06a8542f51d75"
-    };
-
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getDatabase(app);
-
-    let currentUser = null;
-    let currentNickname = "";
-    let activeRoomId = null;
-    let studyInterval = null;
-    let sessionSeconds = 0;
-    let currentTotalMinutes = 0;
-
-    // --- 匿名身份驗證 ---
-    document.getElementById('btn-login-anonymous').addEventListener('click', async () => {
-        const nameInput = document.getElementById('login-nickname');
-        const name = nameInput.value.trim();
-        if (!name) {
-            alert("請輸入一個暱稱。");
-            return;
-        }
-        currentNickname = name;
-        localStorage.setItem('study_room_nickname', name); // 本地保存暱稱
-        
-        try {
-            await signInAnonymously(auth);
-        } catch (error) {
-            console.error("Auth Error:", error.code, error.message);
-            if (error.code === 'auth/operation-not-allowed') {
-                alert("登入失敗：Firebase 尚未啟用『匿名 (Anonymous)』登入方法。請前往 Firebase 控制台開啟。");
-            } else {
-                alert("登入出錯：" + error.message);
-            }
-        }
-    });
-
-    onAuthStateChanged(auth, (user) => {
-        if (user) {
-            currentUser = user;
-            currentNickname = currentNickname || localStorage.getItem('study_room_nickname') || "匿名學生";
-            document.getElementById('auth-screen').style.display = 'none';
-            document.getElementById('main-app').style.display = 'flex';
-            document.getElementById('user-display-name').innerText = currentNickname;
-            initRoomList();
-        } else {
-            document.getElementById('auth-screen').style.display = 'flex';
-            document.getElementById('main-app').style.display = 'none';
-            cleanupRoomSession();
-        }
-    });
-
-    document.getElementById('btn-logout').addEventListener('click', () => {
-        localStorage.removeItem('study_room_nickname');
-        signOut(auth);
-    });
-
-    // --- 房間系統 ---
-    function initRoomList() {
-        onValue(ref(db, 'rooms'), (snapshot) => {
-            const container = document.getElementById('room-list');
-            container.innerHTML = '';
-            const rooms = snapshot.val();
-            if (!rooms) return;
-
-            Object.keys(rooms).forEach(roomId => {
-                const room = rooms[roomId];
-                const div = document.createElement('div');
-                div.className = `room-item ${activeRoomId === roomId ? 'active' : ''}`;
-                div.innerHTML = `<div class="fw-bold text-truncate">${room.name}</div><div class="small text-muted">${room.createdBy} 建立</div>`;
-                div.onclick = () => joinRoom(roomId, room.name);
-                container.appendChild(div);
-            });
-        });
-    }
-
-    document.getElementById('btn-create-room').addEventListener('click', async () => {
-        const name = document.getElementById('new-room-name').value.trim();
-        if (!name) return;
-        const newRef = push(ref(db, 'rooms'));
-        await set(newRef, { name, createdBy: currentNickname, createdAt: serverTimestamp() });
-        const modalEl = document.getElementById('createRoomModal');
-        const modal = bootstrap.Modal.getInstance(modalEl);
-        if (modal) modal.hide();
-        joinRoom(newRef.key, name);
-    });
-
-    async function joinRoom(roomId, roomName) {
-        if (activeRoomId === roomId) return;
-        cleanupRoomSession();
-        activeRoomId = roomId;
-
-        document.getElementById('active-room-ui').classList.remove('d-none');
-        document.getElementById('no-room-selected').classList.add('d-none');
-        document.getElementById('current-room-name').innerText = roomName;
-        
-        const statusRef = ref(db, `rooms/${roomId}/onlineUsers/${currentUser.uid}`);
-        set(statusRef, { name: currentNickname, lastSeen: serverTimestamp() });
-        onDisconnect(statusRef).remove();
-
-        onValue(ref(db, `rooms/${roomId}/studyTimes/${currentUser.uid}`), (snap) => {
-            currentTotalMinutes = snap.val()?.total || 0;
-            document.getElementById('total-study-time').innerText = currentTotalMinutes;
-        }, { onlyOnce: true });
-
-        startRoomListeners(roomId);
-        initRoomList();
-    }
-
-    function cleanupRoomSession() {
-        if (activeRoomId && currentUser) remove(ref(db, `rooms/${activeRoomId}/onlineUsers/${currentUser.uid}`));
-        stopTimer();
-        activeRoomId = null;
-    }
-
-    function startRoomListeners(roomId) {
-        onValue(query(ref(db, `rooms/${roomId}/chat`), limitToLast(50)), (snapshot) => {
-            const msgBox = document.getElementById('chat-messages');
-            msgBox.innerHTML = '';
-            snapshot.forEach(c => {
-                const m = c.val();
-                const isMe = m.uid === currentUser.uid;
-                const div = document.createElement('div');
-                div.className = `msg ${isMe ? 'msg-me' : 'msg-other'}`;
-                div.innerHTML = `<div class="msg-info">${isMe ? '你' : m.user}</div><div class="msg-bubble">${m.text}</div>`;
-                msgBox.appendChild(div);
-            });
-            msgBox.scrollTop = msgBox.scrollHeight;
-        });
-
-        onValue(ref(db, `rooms/${roomId}/onlineUsers`), (snapshot) => {
-            const list = document.getElementById('online-users');
-            list.innerHTML = '';
-            let count = 0;
-            snapshot.forEach(c => {
-                count++;
-                const u = c.val();
-                const div = document.createElement('div');
-                div.className = 'glass-list-item';
-                div.innerHTML = `<div class="d-flex align-items-center gap-2"><div class="bg-success rounded-circle" style="width:8px; height:8px"></div><span class="small">${u.name}</span></div>`;
-                list.appendChild(div);
-            });
-            document.getElementById('online-count').innerText = count;
-        });
-
-        onValue(ref(db, `rooms/${roomId}/studyTimes`), (snapshot) => {
-            const list = document.getElementById('leaderboard');
-            list.innerHTML = '';
-            const arr = [];
-            snapshot.forEach(c => arr.push({ name: c.val().name || "匿名學生", total: c.val().total }));
-            arr.sort((a,b) => b.total - a.total).slice(0,5).forEach((t, i) => {
-                const div = document.createElement('div');
-                div.className = 'glass-list-item';
-                div.innerHTML = `<span class="small fw-bold">#${i+1}</span><span class="small mx-2 text-truncate">${t.name}</span><span class="badge bg-light text-primary rounded-pill">${t.total}m</span>`;
-                list.appendChild(div);
-            });
-        });
-    }
-
-    document.getElementById('chat-form').onsubmit = (e) => {
-        e.preventDefault();
-        const input = document.getElementById('chat-input');
-        if (!input.value.trim() || !activeRoomId) return;
-        push(ref(db, `rooms/${activeRoomId}/chat`), {
-            user: currentNickname,
-            uid: currentUser.uid,
-            text: input.value,
-            timestamp: serverTimestamp()
-        });
-        input.value = '';
-    };
-
-    document.getElementById('btn-timer-start').onclick = () => {
-        if (studyInterval) return;
-        document.getElementById('btn-timer-start').classList.add('d-none');
-        document.getElementById('btn-timer-pause').classList.remove('d-none');
-        studyInterval = setInterval(() => {
-            sessionSeconds++;
-            const h = Math.floor(sessionSeconds/3600).toString().padStart(2,'0');
-            const m = Math.floor((sessionSeconds%3600)/60).toString().padStart(2,'0');
-            const s = (sessionSeconds%60).toString().padStart(2,'0');
-            document.getElementById('timer-text').innerText = `${h}:${m}:${s}`;
-            if (sessionSeconds % 60 === 0) {
-                currentTotalMinutes++;
-                update(ref(db, `rooms/${activeRoomId}/studyTimes/${currentUser.uid}`), { total: currentTotalMinutes, name: currentNickname });
-                document.getElementById('total-study-time').innerText = currentTotalMinutes;
-            }
-        }, 1000);
-    };
-
-    function stopTimer() {
-        clearInterval(studyInterval);
-        studyInterval = null;
-        document.getElementById('btn-timer-start').classList.remove('d-none');
-        document.getElementById('btn-timer-pause').classList.add('d-none');
-    }
-    document.getElementById('btn-timer-pause').onclick = stopTimer;
-    document.getElementById('btn-timer-reset').onclick = () => { stopTimer(); sessionSeconds = 0; document.getElementById('timer-text').innerText = "00:00:00"; };
-
-</script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-</body>
-</html>
+  );
+}
